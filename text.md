@@ -2,7 +2,9 @@
 
 At Sortable we use [Spark](http://spark.apache.org/) for many of our data processing tasks. Spark is an engine that allows us to run many tasks in parallel across dozens of machines in a cluster, but it can also be used to run tasks across cores on a desktop.
 
-One of the tricks that we've found to improve performance of Spark jobs is to repartition our data. We'll illistrate how this can help with a simple example.
+The main abstraction in Spark is the Resilient Distributed Dataset (RDD). RDDs are collections of objects. Under the hood, these objects are stored in partitions. When performing computations on RDDs, these partitions can be operated on in parallel.
+
+One of the tricks that we've found to improve performance of Spark jobs is to change the partitioning of our data. We'll illustrate how this can help with a simple example.
 
 ## Finding Prime Numbers
 
@@ -37,17 +39,17 @@ Let's do this in the Spark shell:
     scala> prime.collect()
     res0: Array[Int] = Array(563249, 17, 281609, 840761, 1126513, 1958993, 840713, 1959017, 41, 281641, 1681513, 1126441, 73, 1126457, 89, 840817, 97, 1408009, 113, 137, 1408241, 563377, 1126649, 281737, 281777, 840841, 1408217, 1681649, 281761, 1408201, 1959161, 1408177, 840929, 563449, 1126561, 193, 1126577, 1126537, 1959073, 563417, 233, 281849, 1126553, 563401, 281833, 241, 563489, 281, 281857, 257, 1959241, 313, 841081, 337, 1408289, 563561, 281921, 353, 1681721, 409, 281993, 401, 1126897, 282001, 1126889, 1959361, 1681873, 563593, 433, 841097, 1959401, 1408417, 1959313, 1681817, 457, 841193, 449, 563657, 282089, 282097, 1408409, 1408601, 1959521, 1682017, 841241, 1408577, 569, 1408633, 521, 841273, 1127033, 841289, 617, 1408529, 1959457, 563777, 841297, 1959473, 577, 593, 563809, 601,...
 
-The answer looks reasonable, but let's look at the performance. If we go into the Spark UI we can see that Spark used 3 stages. Here's the DAG (Directed Acyclic Graph) visualization from the UI, which shows the various pieces that were computed along the way:
+The answer looks reasonable, but let's look at the performance. If we go into the Spark UI we can see that Spark used 3 stages. Here's the DAG (Directed Acyclic Graph) visualization from the UI, which shows the various RDDs that were computed along the way:
 
 ![DAG without repartition](no_repartition_DAG.png)
 
-Let's briefly look at Stage 0's tasks:
+A new stage begins every time the job requires communication between partitions (in Spark terminology this communication is known as a "shuffle"). Spark stages have one task for every partition, and these tasks transform a partition of an RDD into a partition of another RDD. Let's briefly look at Stage 0's tasks:
 
 ![Stage 0 without repartition](no_repartition_stage_0.png)
 
 The columns of interest to us are "Duration" and "Shuffle Write / Records". Our `sc.parallelize(2 to n, 8)` created 1999999 records, which were evenly distributed across the 8 partitions. Each task took about the same amount of time, so this looks good.
 
-Stage 1 is the most interesting stage, since it ran our `map` and `flatMap`. Let's look at it too:
+Stage 1 is the most interesting stage, since it ran our `map` and `flatMap` transformations. Let's look at it too:
 
 ![Stage 1 without repartition](no_repartition_stage_1.png)
 
@@ -61,11 +63,11 @@ When we ran `sc.parallelize(2 to n, 8)`, Spark used a partitioning scheme that n
 
 We can repartition our data. Calling `.repartition(numPartitions)` on an RDD in Spark will shuffle the data into the number of partitions we specify. Let's try adding that to our code.
 
-We'll run the same thing as before, but insert `.repartition(8)` between the `.map` and the `.flatMap`. Our data will have the same number of partitions, but the data will be redistributed across those partitions. Then our second line looks like this:
+We'll run the same thing as before, but insert `.repartition(8)` between the `.map` and the `.flatMap`. Our RDD will have the same number of partitions as before, but the data will be redistributed across those partitions. Then our second line looks like this:
 
     val composite = sc.parallelize(2 to n, 8).map(x => (x, (2 to (n / x)))).repartition(8).flatMap(kv => kv._2.map(_ * kv._1))
 
-Our new DAG is a little more complicated:
+Our new DAG is a little more complicated because the repartition added another shuffle:
 
 ![DAG with repartition](repartition_DAG.png)
 
