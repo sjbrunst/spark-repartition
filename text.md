@@ -45,7 +45,7 @@ Let's briefly look at Stage 0's tasks:
 
 ![Stage 0 without repartition](no_repartition_stage_0.png)
 
-Our `sc.parallelize(2 to n, 8)` created 1999999 records, which were evenly distributed across the 8 partitions. Each task took about the same amount of time, so this looks good.
+The columns of interest to us are "Duration" and "Shuffle Write / Records". Our `sc.parallelize(2 to n, 8)` created 1999999 records, which were evenly distributed across the 8 partitions. Each task took about the same amount of time, so this looks good.
 
 Stage 1 is the most interesting stage, since it ran our `map` and `flatMap`. Let's look at it too:
 
